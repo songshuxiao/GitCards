@@ -23,7 +23,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  * @package GitCards
  * @author  songshuxiao
- * @version 1.3.0
+ * @version 1.3.1
  * @link    https://github.com/songshuxiao/GitCards
  * @license MIT
  */
@@ -41,7 +41,7 @@ class Plugin implements PluginInterface
     ];
 
     /**
-     * 插件激活：注册钩子、创建缓存目录
+     * 插件激活：注册钩子、创建缓存目录、添加快捷插入按钮
      *
      * @return string 激活提示消息
      */
@@ -55,6 +55,11 @@ class Plugin implements PluginInterface
         \Typecho\Plugin::factory('Widget\Archive')->header = __CLASS__ . '::headerInsert';
         \Typecho\Plugin::factory('Widget\Archive')->footer = __CLASS__ . '::footerInsert';
 
+        // 编辑页快捷插入按钮（在“选项”侧边栏和底部输出 JS）
+        \Typecho\Plugin::factory('admin/write-post.php')->option = [__CLASS__, 'renderOptionBlock'];
+        \Typecho\Plugin::factory('admin/write-page.php')->option  = [__CLASS__, 'renderOptionBlock'];
+        \Typecho\Plugin::factory('admin/footer.php')->end         = [__CLASS__, 'renderFooterJs'];
+
         // 创建缓存目录
         $cacheDir = __DIR__ . '/cache';
         if (!is_dir($cacheDir)) {
@@ -65,7 +70,7 @@ class Plugin implements PluginInterface
             @file_put_contents($cacheDir . '/.htaccess', $htaccess);
         }
 
-        return _t('GitCards 插件已激活，可在文章中使用 [gitcard] 短代码插入 Git 仓库卡片');
+        return _t('GitCards 插件已激活，可在文章中使用 [gitcard] 短代码插入 Git 仓库卡片，并已添加快捷插入按钮。');
     }
 
     /**
@@ -266,6 +271,78 @@ class Plugin implements PluginInterface
 
         $jsUrl = self::assetUrl('assets/gitcards.js');
         echo '<script src="' . $jsUrl . '" defer></script>' . "\n";
+    }
+
+    // ========================================================================
+    //  快捷插入按钮（编辑页功能）
+    // ========================================================================
+
+    /**
+     * 在编辑页侧边栏“选项”中插入 HTML 区块
+     *
+     * @param mixed $post 文章/页面对象（未使用）
+     */
+    public static function renderOptionBlock($post): void
+    {
+        ?>
+        <section class="typecho-post-option">
+            <label class="typecho-label">GitCard 工具</label>
+            <p>
+                <button type="button" id="gitcard-insert-btn" class="btn btn-primary btn-xs">
+                    插入 [gitcard url=""]
+                </button>
+            </p>
+            <p class="description">点击插入短代码，光标自动定位。</p>
+        </section>
+        <?php
+    }
+
+    /**
+     * 在编辑页底部输出 JavaScript，实现按钮点击插入短代码
+     */
+    public static function renderFooterJs(): void
+    {
+        $scriptName = basename($_SERVER['SCRIPT_NAME']);
+        if (in_array($scriptName, ['write-post.php', 'write-page.php'])) {
+            ?>
+            <script>
+            window.addEventListener('load', function() {
+                console.log('GitCard: 脚本已加载，准备绑定按钮...');
+                var btn = document.getElementById('gitcard-insert-btn');
+                if (!btn) {
+                    console.warn('GitCard: 未找到按钮 ID');
+                    return;
+                }
+                btn.addEventListener('click', function() {
+                    console.log('GitCard: 按钮被点击');
+                    var textarea = document.getElementById('text');
+                    if (!textarea) {
+                        alert('错误：找不到文章编辑器 (#text)，无法插入代码。');
+                        return;
+                    }
+                    var code = '[gitcard url=""]';
+                    var startPos = textarea.selectionStart;
+                    var endPos = textarea.selectionEnd;
+                    var oldValue = textarea.value;
+                    if (typeof startPos !== 'number' || typeof endPos !== 'number') {
+                        startPos = endPos = oldValue.length;
+                        console.log('GitCard: 无法获取光标，追加到末尾');
+                    }
+                    var newValue = oldValue.substring(0, startPos) + code + oldValue.substring(endPos, oldValue.length);
+                    textarea.value = newValue;
+                    var event = new Event('input', { bubbles: true });
+                    textarea.dispatchEvent(event);
+                    var newCursorPos = startPos + 15; 
+                    textarea.focus();
+                    if (typeof textarea.setSelectionRange === 'function') {
+                        textarea.setSelectionRange(newCursorPos, newCursorPos);
+                    }
+                    console.log('GitCard: 代码插入成功，光标已移动');
+                });
+            });
+            </script>
+            <?php
+        }
     }
 
     // ========================================================================
